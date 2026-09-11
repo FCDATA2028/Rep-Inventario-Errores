@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cedis Slotting- Control Ejecutivo de Reserva</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- PapaParse para procesamiento de CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- SheetJS (xlsx) para exportar a Excel -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- Header Principal -->
+    <header
+        class="bg-white border-b border-slate-200 px-6 py-3 shadow-sm flex justify-between items-center sticky top-0 z-30">
+        <div class="flex items-center gap-3">
+            <div
+                class="w-8 h-8 rounded-lg bg-blue-900 text-white font-black flex items-center justify-center text-sm shadow">
+                A
+            </div>
+            <h1 class="text-sm font-bold tracking-tight uppercase text-slate-900">
+                Cedis Slotting <span class="text-xs font-normal text-slate-500">| Control de Ubicación en
+                    Reserva</span>
+            </h1>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <!-- Botón Cargar Archivo WMS -->
+            <button id="openModalBtn"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-2 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                    </path>
+                </svg>
+                Cargar Archivo WMS
+            </button>
+
+            <!-- Botón Descargar Excel (.xlsx) -->
+            <button id="exportExcelBtn" disabled
+                class="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-2 cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
+                Descargar Mal Ubicados (.xlsx)
+            </button>
+        </div>
+    </header>
+
+    <!-- Container Principal -->
+    <main class="flex-1 p-5 max-w-[1800px] w-full mx-auto flex flex-col gap-4">
+
+        <!-- Barra de Filtros -->
+        <section
+            class="bg-white border border-slate-200 rounded-xl p-3.5 shadow-sm flex flex-wrap gap-4 items-center justify-between">
+            <div class="flex gap-4 items-center flex-wrap">
+                <div class="flex items-center gap-2">
+                    <label class="text-xs font-semibold text-slate-600 uppercase">Área:</label>
+                    <select id="areaFilter"
+                        class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600">
+                        <option value="TODAS">TODAS</option>
+                        <option value="AIP01">AIP01</option>
+                        <option value="AIP02">AIP02</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <label class="text-xs font-semibold text-slate-600 uppercase">Piso:</label>
+                    <select id="pisoFilter"
+                        class="bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600">
+                        <option value="TODOS">TODOS</option>
+                        <option value="PB">Planta Baja</option>
+                        <option value="PA">Planta Alta (AIP01)</option>
+                        <option value="P1">Piso 1 (AIP02)</option>
+                        <option value="P2">Piso 2 (AIP02)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="w-full md:w-72">
+                <input type="text" id="searchInput" placeholder="Buscar por Pasillo..."
+                    class="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-600">
+            </div>
+        </section>
+
+        <!-- Grid de KPIs Gerenciales con colores mejorados -->
+        <section class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+
+            <!-- % Cumplimiento -->
+            <div
+                class="bg-gradient-to-br from-indigo-900 to-slate-900 border border-indigo-700 rounded-xl p-3.5 text-white shadow-sm flex flex-col justify-between">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-indigo-200">% Cumplimiento</p>
+                <p id="kpi-cumplimiento" class="text-2xl font-black text-emerald-400 mt-1">0.0%</p>
+            </div>
+
+            <!-- SKUs Únicos -->
+            <div class="bg-white border-l-4 border-l-purple-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wide">SKUs Únicos</p>
+                <p id="kpi-skus-unicos" class="mt-1 text-xl font-bold text-slate-900">0</p>
+            </div>
+
+            <!-- Total LPNs -->
+            <div class="bg-white border-l-4 border-l-indigo-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Total LPNs</p>
+                <p id="kpi-lpns" class="mt-1 text-xl font-bold text-indigo-900">0</p>
+            </div>
+
+            <!-- Líneas Evaluadas -->
+            <div class="bg-white border-l-4 border-l-blue-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Líneas Evaluadas</p>
+                <p id="kpi-lineas-totales" class="mt-1 text-xl font-bold text-blue-900">0</p>
+            </div>
+
+            <!-- Líneas Cumplidas (Verde) -->
+            <div class="bg-white border-l-4 border-l-emerald-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Líneas Cumplidas</p>
+                <p id="kpi-lineas-cumplidas" class="mt-1 text-xl font-bold text-emerald-600">0</p>
+            </div>
+
+            <!-- Líneas Desviadas (Rojo) -->
+            <div class="bg-white border-l-4 border-l-rose-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-rose-600 uppercase tracking-wide">Líneas Desviadas</p>
+                <p id="kpi-lineas-desviadas" class="mt-1 text-xl font-bold text-rose-600">0</p>
+            </div>
+
+            <!-- Unidades Totales -->
+            <div class="bg-white border-l-4 border-l-amber-500 border border-slate-200 rounded-xl p-3.5 shadow-sm">
+                <p class="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Unidades Totales</p>
+                <p id="kpi-unidades" class="mt-1 text-xl font-bold text-amber-700">0</p>
+            </div>
+
+        </section>
+
+        <!-- Tabla Desglose Consolidado -->
+        <section class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex-1 flex flex-col">
+            <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                <h2 class="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Desglose Consolidado por Pasillo
+                </h2>
+                <span id="pasillosCount" class="text-xs font-semibold text-slate-500">Cargando datos...</span>
+            </div>
+            <div class="flex-1 overflow-y-auto max-h-[600px]">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead
+                        class="bg-slate-100 text-slate-700 uppercase text-[10px] font-bold sticky top-0 z-10 border-b border-slate-200">
+                        <!-- Cabecera dinámica renderizada por JS -->
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-200 font-sans">
+                        <!-- Renderizado por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal Carga de Archivo -->
+    <div id="uploadModal"
+        class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-6 relative">
+
+            <button id="closeModalBtn"
+                class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+            </button>
+
+            <h3 class="text-base font-bold text-slate-900 uppercase tracking-wide mb-1">
+                Cargar Archivo de Reserva WMS
+            </h3>
+            <p class="text-xs text-slate-500 mb-5">
+                Arrastra o selecciona la exportación en formato CSV descargada del sistema WMS.
+            </p>
+
+            <div id="dropZone"
+                class="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer bg-slate-50 hover:bg-blue-50/50 transition-all">
+                <svg class="w-10 h-10 text-blue-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                    </path>
+                </svg>
+                <p class="text-xs font-bold text-slate-700 mb-1">Arrastra tu archivo CSV aquí</p>
+                <p class="text-[11px] text-slate-500 font-medium">O haz clic para explorar tu equipo</p>
+                <input type="file" id="fileInput" accept=".csv" class="hidden">
+            </div>
+
+            <div id="uploadStatus" class="mt-4 text-center text-xs font-bold text-blue-600 hidden">
+                <div
+                    class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent mr-2">
+                </div>
+                Procesando información y actualizando Supabase...
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
